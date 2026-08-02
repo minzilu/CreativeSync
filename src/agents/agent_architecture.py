@@ -120,3 +120,106 @@ def get_openrouter_llm():
             temperature=0.3,
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# 3. Node 1: Router Agent (Groq / Llama 3.1 8B)
+# ---------------------------------------------------------------------------
+
+def router_node(state: AgentState) -> dict:
+    """
+    Router Agent: Parses user inquiry into structured shoot metadata (type, location, date, requirements).
+    """
+    inquiry = state["client_inquiry"]
+    messages = state.get("messages", [])
+    print("\n--- [NODE 1: ROUTER AGENT] (Groq / Llama 3.1 8B) ---")
+    print(f"Analyzing client inquiry: {inquiry}")
+
+    llm = get_router_llm()
+    if llm:
+        try:
+            sys_msg = SystemMessage(content=(
+                "You are the Router Agent for CreativeSync Photography Studio. "
+                "Parse the client inquiry and extract structured metadata: "
+                "Shoot Type, Location, Date/Time, and Specific Requirements."
+            ))
+            human_msg = HumanMessage(content=inquiry)
+            response = llm.invoke([sys_msg, human_msg])
+            parsed_intent = response.content.strip()
+        except Exception as e:
+            print(f"[Router Warning] API call failed: {e}. Using fallback parser.")
+            parsed_intent = generate_fallback_intent(inquiry)
+    else:
+        print("[Router Agent] GROQ_API_KEY not active. Extracting metadata locally.")
+        parsed_intent = generate_fallback_intent(inquiry)
+
+    updated_messages = list(messages) + [
+        {"sender": "Router Agent (Groq)", "content": parsed_intent}
+    ]
+
+    print(f"Parsed Intent:\n{parsed_intent}")
+    return {
+        "parsed_intent": parsed_intent,
+        "messages": updated_messages,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. Node 2: Orchestrator Agent (OpenRouter / Claude 3.5 Sonnet)
+# ---------------------------------------------------------------------------
+
+def orchestrator_node(state: AgentState) -> dict:
+    """
+    Orchestrator Agent: Uses structured intent to generate preliminary photography shoot proposal & quote.
+    """
+    intent = state["parsed_intent"]
+    messages = state.get("messages", [])
+    print("\n--- [NODE 2: ORCHESTRATOR AGENT] (OpenRouter / Claude 3.5 Sonnet) ---")
+    print("Drafting photography proposal and quote...")
+
+    llm = get_openrouter_llm()
+    if llm:
+        try:
+            sys_msg = SystemMessage(content=(
+                "You are the Lead Orchestrator for CreativeSync Photography Studio. "
+                "Draft a professional photography proposal with timeline, gear setup, and pricing."
+            ))
+            human_msg = HumanMessage(content=f"Structured Intent:\n{intent}")
+            response = llm.invoke([sys_msg, human_msg])
+            proposal_draft = response.content.strip()
+        except Exception as e:
+            print(f"[Orchestrator Warning] API call failed: {e}. Using fallback draft.")
+            proposal_draft = generate_fallback_draft(intent)
+    else:
+        print("[Orchestrator Agent] OPENROUTER_API_KEY not active. Generating proposal draft.")
+        proposal_draft = generate_fallback_draft(intent)
+
+    updated_messages = list(messages) + [
+        {"sender": "Orchestrator Agent (Claude 3.5 Sonnet)", "content": proposal_draft}
+    ]
+
+    print(f"Proposal Draft:\n{proposal_draft}")
+    return {
+        "proposal_draft": proposal_draft,
+        "messages": updated_messages,
+    }
+
+
+def generate_fallback_intent(inquiry: str) -> str:
+    return (
+        "Shoot Type: Outdoor Golden Hour Portrait\n"
+        "Location: Malibu Beach\n"
+        "Date/Time: August 15th @ 6:00 PM\n"
+        "Requirements: High-speed sync fill light, softbox modifier, quick high-res delivery."
+    )
+
+
+def generate_fallback_draft(intent: str) -> str:
+    return (
+        "### PHOTOGRAPHY SHOOT PROPOSAL & QUOTE\n"
+        "**Client Intent**: Golden Hour Sunset Portrait Session\n"
+        "**Location**: Malibu Beach | **Date**: August 15th @ 6:00 PM\n"
+        "**Schedule**: 5:30 PM Setup -> 6:00 PM - 7:30 PM Shoot -> 8:00 PM Wrap\n"
+        "**Equipment**: Sony A7IV mirrorless, 85mm f/1.4 prime lens, Godox AD200Pro strobe.\n"
+        "**Pricing**: $450 total (includes 2-hour shoot & 10 retouched high-res deliverables)."
+    )

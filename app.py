@@ -212,7 +212,15 @@ with st.form(key="shoot_booking_form"):
         height=100,
         placeholder="Detail lighting preferences, shot list items, or urgent turnaround needs...",
     )
-    
+
+    st.markdown("##### 👤 Client Contact Information")
+    col_contact1, col_contact2 = st.columns(2)
+    with col_contact1:
+        client_name = st.text_input("Full Name", value="Kasun Perera", placeholder="e.g. Kasun Perera")
+        client_email = st.text_input("Email Address", value="kasun@example.com", placeholder="e.g. kasun@example.com")
+    with col_contact2:
+        client_phone = st.text_input("Contact / WhatsApp Number", value="+94 77 123 4567", placeholder="e.g. +94 77 123 4567")
+
     submit_button = st.form_submit_button(label="🚀 Compile & Book Shoot Proposal")
 
 
@@ -232,6 +240,7 @@ if submit_button:
 
     # Dynamically format ALL user inputs into single string for client_inquiry
     combined_inquiry = (
+        f"Client Name: {client_name}, Email: {client_email}, Phone: {client_phone}, "
         f"Shoot Type: {shoot_type}, Location: {location}, Date: {shoot_date}, Time: {shoot_time}, "
         f"Aesthetic: {aesthetic}, B2B Studio Booking: {b2b_str}, Add-ons Selected: {addons_str}, "
         f"Notes: {special_requirements}"
@@ -266,7 +275,7 @@ if submit_button:
                 st.markdown(client_proposal)
 
                 # WhatsApp Booking Confirmation Button
-                wa_message = f"Hi! I would like to book a {shoot_type} on {shoot_date} at {location}."
+                wa_message = f"Hi! I am {client_name} ({client_phone}). I would like to book a {shoot_type} on {shoot_date} at {location}."
                 encoded_wa = urllib.parse.quote(wa_message)
                 wa_url = f"https://wa.me/94700000000?text={encoded_wa}"
                 

@@ -4,7 +4,7 @@ CreativeSync Multi-Agent State Machine
 Directory: src/agents/agent_architecture.py
 
 Graph Sequence:
-START -> router -> location_scout -> orchestrator -> reflection -> END
+START -> router -> location_scout -> rag_retrieval -> orchestrator -> reflection -> END
 """
 
 import os
@@ -50,7 +50,7 @@ except ImportError:
 
         def invoke(self, state):
             current_state = dict(state)
-            for node_name in ["router", "location_scout", "orchestrator", "reflection"]:
+            for node_name in ["router", "location_scout", "rag_retrieval", "orchestrator", "reflection"]:
                 if node_name in self.nodes:
                     update = self.nodes[node_name](current_state)
                     if isinstance(update, dict):
@@ -58,7 +58,7 @@ except ImportError:
             return current_state
 
 
-# LangChain LLM imports
+# LangChain LLM & Embedding imports
 try:
     from langchain_groq import ChatGroq
     HAS_GROQ = True
@@ -72,6 +72,22 @@ except ImportError:
     HAS_OPENROUTER = False
 
 try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    try:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+    except ImportError:
+        HuggingFaceEmbeddings = None
+
+try:
+    from langchain_community.vectorstores import FAISS
+except ImportError:
+    try:
+        from langchain_community.vectorstores.faiss import FAISS
+    except ImportError:
+        FAISS = None
+
+try:
     from langchain_core.messages import SystemMessage, HumanMessage
 except ImportError:
     pass
@@ -82,6 +98,7 @@ class AgentState(TypedDict):
     client_inquiry: str
     parsed_intent: str
     location_logistics: str
+    retrieved_context: str
     proposal_draft: str
     final_proposal: str
     messages: List[Dict[str, str]]
@@ -89,7 +106,7 @@ class AgentState(TypedDict):
 StudioState = AgentState
 
 
-# 2. LLM Initialization Helpers
+# 2. LLM & FAISS Initialization Helpers
 def get_router_llm():
     if not HAS_GROQ:
         return None
@@ -120,8 +137,6 @@ def get_openrouter_llm():
         )
     return None
 
-
-# Helper to load location database
 def load_locations_db() -> dict:
     """Load location scouting database from data/locations_db.json."""
     db_path = os.path.join(os.path.dirname(__file__), "../../data/locations_db.json")
@@ -134,6 +149,27 @@ def load_locations_db() -> dict:
         except Exception as e:
             print(f"[Location Scout Warning] Failed to read locations_db.json: {e}")
     return {}
+
+def get_faiss_vectorstore():
+    """Load local FAISS vector store index from data/faiss_index."""
+    if FAISS is None or HuggingFaceEmbeddings is None:
+        return None
+    index_dir = os.path.join(os.path.dirname(__file__), "../../data/faiss_index")
+    if not os.path.exists(index_dir):
+        index_dir = "data/faiss_index"
+    
+    if os.path.exists(index_dir):
+        try:
+            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            vectorstore = FAISS.load_local(
+                index_dir,
+                embeddings,
+                allow_dangerous_deserialization=True
+            )
+            return vectorstore
+        except Exception as e:
+            print(f"[FAISS RAG Warning] Failed to load FAISS index: {e}")
+    return None
 
 
 # 3. Node 1: Router Agent
@@ -181,7 +217,6 @@ def location_scout_node(state: AgentState) -> dict:
     matched_spots = []
     matched_city = None
 
-    # Search for matching city in intent or inquiry
     search_text = f"{intent} {inquiry}".lower()
     for city_name, spots in locations_data.items():
         if city_name.lower() in search_text:
@@ -216,18 +251,71 @@ def location_scout_node(state: AgentState) -> dict:
     }
 
 
-# 5. Node 3: Orchestrator Agent
+# 5. Node 3: FAISS RAG Retrieval Node
+def rag_retrieval_node(state: AgentState) -> dict:
+    """
+    FAISS RAG Retrieval Node:
+    Performs similarity search on the local FAISS index to retrieve the top 3 relevant chunks,
+    storing the concatenated text in retrieved_context.
+    """
+    query = state.get("parsed_intent") or state["client_inquiry"]
+    messages = state.get("messages", [])
+    print("\n--- [NODE: FAISS RAG RETRIEVAL AGENT] ---")
+    print(f"Retrieving top 3 FAISS knowledge chunks for query: {query}")
+
+    retrieved_context = ""
+    vectorstore = get_faiss_vectorstore()
+    if vectorstore:
+        try:
+            docs = vectorstore.similarity_search(query, k=3)
+            retrieved_context = "\n---\n".join([doc.page_content for doc in docs])
+        except Exception as e:
+            print(f"[FAISS Search Error]: {e}")
+            retrieved_context = ""
+    
+    if not retrieved_context:
+        # Fallback to reading raw knowledge_base.txt if FAISS index is uninitialized
+        kb_path = os.path.join(os.path.dirname(__file__), "../../data/knowledge_base.txt")
+        if not os.path.exists(kb_path):
+            kb_path = "data/knowledge_base.txt"
+        if os.path.exists(kb_path):
+            try:
+                with open(kb_path, "r", encoding="utf-8") as f:
+                    retrieved_context = f.read()[:1000]
+            except Exception:
+                pass
+        
+        if not retrieved_context:
+            retrieved_context = (
+                "FAISS Knowledge Base: Standard photography studio guidelines, "
+                "equipment packages, color grading, terms, and delivery turnaround apply."
+            )
+
+    print(f"FAISS Context Retrieved:\n{retrieved_context[:250]}...")
+    updated_messages = list(messages) + [{"sender": "RAG Retrieval", "content": retrieved_context}]
+    return {
+        "retrieved_context": retrieved_context,
+        "messages": updated_messages
+    }
+
+
+# 6. Node 4: Final Proposal Compiler (Orchestrator)
 def orchestrator_node(state: AgentState) -> dict:
     intent = state["parsed_intent"]
     location_info = state.get("location_logistics", "")
+    retrieved_info = state.get("retrieved_context", "")
     messages = state.get("messages", [])
     
     llm = get_openrouter_llm()
     if llm:
         try:
             sys_msg = SystemMessage(content=(
-                "You are the Lead Studio Orchestrator for CreativeSync Photography Studio in Sri Lanka.\n"
-                "Draft a professional photography proposal based on the parsed client intent and Location Logistics Context.\n\n"
+                "You are the Lead Studio Orchestrator & Final Proposal Compiler for CreativeSync Photography Studio in Sri Lanka.\n"
+                "Draft a professional photography proposal grounded in the provided FAISS RAG Knowledge Base Context, Location Logistics Context, and Client Inquiry.\n\n"
+                "CRITICAL CLIENT DETAILS EXTRACTION RULE:\n"
+                "- Explicitly extract the Client's Full Name, Email Address, and Contact/WhatsApp Phone Number from the Client Inquiry and Structured Intent.\n"
+                "- Inject these real extracted client contact details directly into the final markdown proposal under a 'Client Details' section.\n"
+                "- ABSOLUTELY FORBIDDEN: You MUST NEVER output literal placeholders with brackets like '[Client Name]', '[Client Email]', '[Client Phone]', '[Client]', or '[Your Name]'. Replace ALL placeholders with the actual extracted details from the input state or 'Valued Client' if unprovided.\n\n"
                 "CRITICAL BUSINESS & PRICING RULES (LKR):\n"
                 "1. RETAIL PRICING MATRIX:\n"
                 "   - Commercial & Corporate: Starter LKR 35,000 (1 hr, 25-35 photos), Business LKR 65,000 (2-3 hrs, 45-65 photos), Premium LKR 95,000 - 125,000+ (4-8 hrs).\n"
@@ -243,13 +331,21 @@ def orchestrator_node(state: AgentState) -> dict:
                 "     * 24-Hour Express Edit: +LKR 10,000\n"
                 "     * Raw Files Included: +LKR 15,000\n"
                 "     * Drone Coverage: +LKR 15,000\n\n"
-                "5. LOCATION LOGISTICS RULE:\n"
-                "   - Incorporate the provided Location Logistics & Suggestions section into your proposal draft.\n\n"
+                "5. GROUNDING & RAG KNOWLEDGE RULE:\n"
+                "   - Use the retrieved FAISS RAG context to ground all proposal details regarding gear specs, deliverable terms, and studio policies.\n\n"
                 "INSTRUCTIONS:\n"
                 "- Output pricing exclusively in LKR.\n"
-                "- Provide an itemized quote breakdown, location suggestions, and total quote."
+                "- Inject actual Client Name, Email, and Phone Number directly into the proposal without bracketed placeholders.\n"
+                "- Provide an itemized quote breakdown, location suggestions, grounded equipment setup, and final calculated total quote."
             ))
-            human_msg = HumanMessage(content=f"Structured Intent:\n{intent}\n\nLocation Logistics Context:\n{location_info}")
+            human_msg = HumanMessage(
+                content=(
+                    f"Client Inquiry:\n{state['client_inquiry']}\n\n"
+                    f"Structured Intent:\n{intent}\n\n"
+                    f"Location Logistics Context:\n{location_info}\n\n"
+                    f"FAISS RAG Knowledge Base Context:\n{retrieved_info}"
+                )
+            )
             response = llm.invoke([sys_msg, human_msg])
             proposal_draft = response.content.strip()
         except Exception as e:
@@ -275,9 +371,10 @@ def orchestrator_node(state: AgentState) -> dict:
     return {"proposal_draft": proposal_draft, "messages": updated_messages}
 
 
-# 6. Node 4: Reflection Agent
+# 7. Node 5: Reflection Agent
 def reflection_node(state: AgentState) -> dict:
     draft = state["proposal_draft"]
+    retrieved_info = state.get("retrieved_context", "")
     messages = state.get("messages", [])
     
     llm = get_openrouter_llm()
@@ -286,12 +383,13 @@ def reflection_node(state: AgentState) -> dict:
             sys_msg = SystemMessage(content=(
                 "You are the QA Reviewer for CreativeSync Studio in Sri Lanka.\n"
                 "Review the draft proposal for safety, location feasibility, gear accuracy, and pricing math.\n"
+                "CRITICAL CLIENT DETAILS RULE: Ensure the client's actual Name, Email, and Phone Number from the inquiry are present in the proposal. Replace ANY remaining bracketed placeholders like [Client Name], [Client Email], [Client Phone], [Client], or [Your Name] with actual values.\n"
                 "CRITICAL PRICING RULE: Preserve all LKR rates, B2B rates, travel fees, and add-on costs exactly as quoted. Do NOT convert to USD ($).\n"
                 "CRITICAL LOGISTICS RULE: Ensure the Location Logistics & Suggestions section is included in the output.\n"
                 "CRITICAL OUTPUT RULE: Your final output must ONLY contain the polished client-facing proposal.\n"
                 "STRIP OUT all internal gear lists, camera specs, and safety audit notes."
             ))
-            human_msg = HumanMessage(content=f"Draft Proposal:\n{draft}")
+            human_msg = HumanMessage(content=f"Draft Proposal:\n{draft}\n\nGrounded Knowledge Context:\n{retrieved_info}")
             response = llm.invoke([sys_msg, human_msg])
             final_proposal = response.content.strip()
         except Exception as e:
@@ -317,17 +415,19 @@ def reflection_node(state: AgentState) -> dict:
     return {"final_proposal": final_proposal, "messages": updated_messages}
 
 
-# 7. LangGraph Graph Construction
+# 8. LangGraph Graph Construction
 def build_agent_graph():
     builder = StateGraph(AgentState)
     builder.add_node("router", router_node)
     builder.add_node("location_scout", location_scout_node)
+    builder.add_node("rag_retrieval", rag_retrieval_node)
     builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("reflection", reflection_node)
     
     builder.add_edge(START, "router")
     builder.add_edge("router", "location_scout")
-    builder.add_edge("location_scout", "orchestrator")
+    builder.add_edge("location_scout", "rag_retrieval")
+    builder.add_edge("rag_retrieval", "orchestrator")
     builder.add_edge("orchestrator", "reflection")
     builder.add_edge("reflection", END)
     

@@ -249,6 +249,7 @@ if submit_button:
         "client_inquiry": combined_inquiry,
         "parsed_intent": "",
         "location_logistics": "",
+        "retrieved_context": "",
         "proposal_draft": "",
         "final_proposal": "",
         "messages": [],

@@ -2,13 +2,6 @@
 CreativeSync Multi-Agent State Machine (3-Node Architecture)
 
 Directory: src/agents/agent_architecture.py
-
-Nodes:
-1. Router Agent: Groq (Llama 3.1 8B) - Parses client inquiry into structured shoot intent.
-2. Orchestrator Agent: OpenRouter (Claude 3.5 Sonnet) - Drafts photography shoot proposal & quote.
-3. Reflection Agent: OpenRouter (Claude 3.5 Sonnet) - Audits lighting gear, modifiers, safety & polishes final proposal.
-
-State Flow: START -> router -> orchestrator -> reflection -> END
 """
 
 import os
@@ -16,10 +9,14 @@ import sys
 from typing import TypedDict, List, Dict, Any
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Forcefully load keys from .env file overriding cached environment variables
+load_dotenv(override=True)
 
-# LangGraph imports (with fallback executor for bare environments)
+# Debug prints to verify API key loading
+print(f"Groq Key Loaded: {bool(os.getenv('GROQ_API_KEY'))}")
+print(f"OpenRouter Key Loaded: {bool(os.getenv('OPENROUTER_API_KEY'))}")
+
+# LangGraph imports 
 try:
     from langgraph.graph import StateGraph, START, END
     HAS_LANGGRAPH = True
@@ -29,7 +26,6 @@ except ImportError:
     END = "END"
 
     class StateGraph:
-        """Lightweight fallback state graph compiler when langgraph is not installed."""
         def __init__(self, state_schema):
             self.state_schema = state_schema
             self.nodes = {}
@@ -58,7 +54,7 @@ except ImportError:
             return current_state
 
 
-# LangChain LLM imports (with dynamic availability checks)
+# LangChain LLM imports
 try:
     from langchain_groq import ChatGroq
     HAS_GROQ = True
@@ -77,31 +73,19 @@ except ImportError:
     pass
 
 
-# ---------------------------------------------------------------------------
 # 1. State Schema Definition
-# ---------------------------------------------------------------------------
-
 class AgentState(TypedDict):
-    """
-    Structured state schema exchanged between agents.
-    """
     client_inquiry: str
     parsed_intent: str
     proposal_draft: str
     final_proposal: str
     messages: List[Dict[str, str]]
 
-
-# Alias for backward compatibility
 StudioState = AgentState
 
 
-# ---------------------------------------------------------------------------
 # 2. LLM Initialization Helpers
-# ---------------------------------------------------------------------------
-
 def get_router_llm():
-    """Initialize Router LLM: Groq (Llama 3.1 8B)."""
     if not HAS_GROQ:
         return None
     groq_api_key = os.getenv("GROQ_API_KEY")
@@ -113,244 +97,163 @@ def get_router_llm():
         )
     return None
 
-
 def get_openrouter_llm():
-    """Initialize Orchestrator & Reflection LLM: OpenRouter (Claude 3.5 Sonnet)."""
-    if not HAS_OPENROUTER:
-        return None
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here":
+    if HAS_OPENROUTER and openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here":
         return ChatOpenAI(
-            model_name="anthropic/claude-3.5-sonnet",
+            model_name="openrouter/auto",
             openai_api_key=openrouter_api_key,
             openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0.3,
+        )
+    # Fallback to Groq if OpenRouter key or package is not active
+    if HAS_GROQ and os.getenv("GROQ_API_KEY"):
+        return ChatGroq(
+            model_name="llama-3.1-8b-instant",
+            groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0.3,
         )
     return None
 
 
-# ---------------------------------------------------------------------------
-# 3. Node 1: Router Agent (Groq / Llama 3.1 8B)
-# ---------------------------------------------------------------------------
-
+# 3. Node 1: Router Agent
 def router_node(state: AgentState) -> dict:
-    """
-    Router Agent: Parses user inquiry into structured shoot metadata (type, location, date, requirements).
-    """
     inquiry = state["client_inquiry"]
     messages = state.get("messages", [])
-    print("\n--- [NODE 1: ROUTER AGENT] (Groq / Llama 3.1 8B) ---")
-    print(f"Analyzing client inquiry: {inquiry}")
-
+    
     llm = get_router_llm()
     if llm:
         try:
             sys_msg = SystemMessage(content=(
-                "You are the Router Agent for CreativeSync Photography Studio. "
-                "Parse the client inquiry and extract structured metadata: "
-                "Shoot Type, Location, Date/Time, and Specific Requirements."
+                "You are the Router Agent for CreativeSync Studio. Parse the client inquiry and extract: "
+                "Shoot Type, Location, Date/Time, B2B Studio Status, Add-ons Selected, and Specific Requirements."
             ))
             human_msg = HumanMessage(content=inquiry)
             response = llm.invoke([sys_msg, human_msg])
             parsed_intent = response.content.strip()
         except Exception as e:
-            print(f"[Router Warning] API call failed: {e}. Using fallback parser.")
-            parsed_intent = generate_fallback_intent(inquiry)
+            error_msg = f"[API EXCEPTION in Router Agent (Groq)]: {str(e)}"
+            print(error_msg)
+            parsed_intent = error_msg
     else:
-        print("[Router Agent] GROQ_API_KEY not active. Extracting metadata locally.")
-        parsed_intent = generate_fallback_intent(inquiry)
+        error_msg = "[GROQ_API_KEY UNSET/MISSING]: GROQ_API_KEY is missing or invalid in .env file."
+        print(error_msg)
+        parsed_intent = error_msg
 
-    updated_messages = list(messages) + [
-        {"sender": "Router Agent (Groq)", "content": parsed_intent}
-    ]
-
-    print(f"Parsed Intent:\n{parsed_intent}")
-    return {
-        "parsed_intent": parsed_intent,
-        "messages": updated_messages,
-    }
+    updated_messages = list(messages) + [{"sender": "Router", "content": parsed_intent}]
+    return {"parsed_intent": parsed_intent, "messages": updated_messages}
 
 
-# ---------------------------------------------------------------------------
-# 4. Node 2: Orchestrator Agent (OpenRouter / Claude 3.5 Sonnet)
-# ---------------------------------------------------------------------------
-
+# 4. Node 2: Orchestrator Agent
 def orchestrator_node(state: AgentState) -> dict:
-    """
-    Orchestrator Agent: Uses structured intent to generate preliminary photography shoot proposal & quote.
-    """
     intent = state["parsed_intent"]
     messages = state.get("messages", [])
-    print("\n--- [NODE 2: ORCHESTRATOR AGENT] (OpenRouter / Claude 3.5 Sonnet) ---")
-    print("Drafting photography proposal and quote...")
-
+    
     llm = get_openrouter_llm()
     if llm:
         try:
             sys_msg = SystemMessage(content=(
-                "You are the Lead Orchestrator for CreativeSync Photography Studio. "
-                "Draft a professional photography proposal with timeline, gear setup, and pricing."
+                "You are the Lead Studio Orchestrator for CreativeSync Photography Studio in Sri Lanka.\n"
+                "Draft a professional photography proposal based on the parsed client intent.\n\n"
+                "CRITICAL BUSINESS & PRICING RULES (LKR):\n"
+                "1. RETAIL PRICING MATRIX:\n"
+                "   - Commercial & Corporate: Starter LKR 35,000 (1 hr, 25-35 photos), Business LKR 65,000 (2-3 hrs, 45-65 photos), Premium LKR 95,000 - 125,000+ (4-8 hrs).\n"
+                "   - Wedding & Pre-Shoots: Pre-Shoot LKR 50,000 avg, Wedding Day LKR 50,000 - 150,000+, Albums/Prints LKR 30,000+.\n"
+                "   - Casual & Portraits: Mini/Casual LKR 10,000 - 25,000.\n\n"
+                "2. B2B FREELANCE RULE:\n"
+                "   - If 'B2B Studio Booking' is TRUE, DO NOT use retail pricing or include album/print costs.\n"
+                "   - Apply a flat Freelance Photographer Day/Session Rate (e.g. LKR 25,000 - LKR 45,000 per session) instead of end-client retail pricing.\n\n"
+                "3. OUTSTATION TRAVEL RULE:\n"
+                "   - If location is outside Colombo, Malabe, or Kaduwela regions (e.g., Kandy, Galle, Negombo, Nuwara Eliya, Jaffna), automatically add an 'Outstation Travel & Logistics Fee' of LKR 15,000 (or LKR 100/km) to the breakdown.\n\n"
+                "4. ADD-ONS CALCULATION RULE:\n"
+                "   - Explicitly add exact LKR values for any selected add-ons:\n"
+                "     * 24-Hour Express Edit: +LKR 10,000\n"
+                "     * Raw Files Included: +LKR 15,000\n"
+                "     * Drone Coverage: +LKR 15,000\n\n"
+                "INSTRUCTIONS:\n"
+                "- Analyze intent, determine base package / B2B rate, travel fee, and add-ons.\n"
+                "- Output pricing exclusively in LKR (no USD).\n"
+                "- Provide an itemized quote breakdown and calculate the exact total."
             ))
             human_msg = HumanMessage(content=f"Structured Intent:\n{intent}")
             response = llm.invoke([sys_msg, human_msg])
             proposal_draft = response.content.strip()
         except Exception as e:
-            print(f"[Orchestrator Warning] API call failed: {e}. Using fallback draft.")
-            proposal_draft = generate_fallback_draft(intent)
+            if HAS_GROQ and os.getenv("GROQ_API_KEY"):
+                try:
+                    groq_llm = ChatGroq(model_name="llama-3.1-8b-instant", groq_api_key=os.getenv("GROQ_API_KEY"))
+                    response = groq_llm.invoke([sys_msg, human_msg])
+                    proposal_draft = response.content.strip()
+                except Exception as ex:
+                    error_msg = f"[API EXCEPTION in Orchestrator Agent]: {str(ex)}"
+                    print(error_msg)
+                    proposal_draft = f"Intent: {intent}\n\n{error_msg}"
+            else:
+                error_msg = f"[API EXCEPTION in Orchestrator Agent]: {str(e)}"
+                print(error_msg)
+                proposal_draft = f"Intent: {intent}\n\n{error_msg}"
     else:
-        print("[Orchestrator Agent] OPENROUTER_API_KEY not active. Generating proposal draft.")
-        proposal_draft = generate_fallback_draft(intent)
+        error_msg = "[LLM API UNSET/MISSING]: Neither OPENROUTER_API_KEY nor GROQ_API_KEY are configured in .env."
+        print(error_msg)
+        proposal_draft = f"Intent: {intent}\n\n{error_msg}"
 
-    updated_messages = list(messages) + [
-        {"sender": "Orchestrator Agent (Claude 3.5 Sonnet)", "content": proposal_draft}
-    ]
-
-    print(f"Proposal Draft:\n{proposal_draft}")
-    return {
-        "proposal_draft": proposal_draft,
-        "messages": updated_messages,
-    }
+    updated_messages = list(messages) + [{"sender": "Orchestrator", "content": proposal_draft}]
+    return {"proposal_draft": proposal_draft, "messages": updated_messages}
 
 
-# ---------------------------------------------------------------------------
-# 5. Node 3: Reflection Agent (OpenRouter / Claude 3.5 Sonnet)
-# ---------------------------------------------------------------------------
-
+# 5. Node 3: Reflection Agent
 def reflection_node(state: AgentState) -> dict:
-    """
-    Reflection Agent: Reviews proposal draft, checks lighting gear, modifiers, safety & outputs final proposal.
-    """
     draft = state["proposal_draft"]
     messages = state.get("messages", [])
-    print("\n--- [NODE 3: REFLECTION AGENT] (OpenRouter / Claude 3.5 Sonnet) ---")
-    print("Reviewing proposal for lighting modifiers and gear safety...")
-
+    
     llm = get_openrouter_llm()
     if llm:
         try:
             sys_msg = SystemMessage(content=(
-                "You are the Quality & Safety Reviewer for CreativeSync Photography Studio. "
-                "Audit the proposal for lighting modifiers, softboxes, HSS sync, sandbags, and output polished final proposal."
+                "You are the QA Reviewer for CreativeSync Studio in Sri Lanka.\n"
+                "Review the draft proposal for safety, gear accuracy, and pricing math.\n"
+                "CRITICAL PRICING RULE: Preserve all LKR rates, B2B rates, travel fees, and add-on costs exactly as quoted. Do NOT convert to USD ($).\n"
+                "CRITICAL OUTPUT RULE: Your final output must ONLY contain the polished client-facing proposal.\n"
+                "STRIP OUT all internal gear lists, camera specs, and safety audit notes."
             ))
             human_msg = HumanMessage(content=f"Draft Proposal:\n{draft}")
             response = llm.invoke([sys_msg, human_msg])
             final_proposal = response.content.strip()
         except Exception as e:
-            print(f"[Reflection Warning] API call failed: {e}. Using polished output.")
-            final_proposal = generate_fallback_reflection(draft)
+            if HAS_GROQ and os.getenv("GROQ_API_KEY"):
+                try:
+                    groq_llm = ChatGroq(model_name="llama-3.1-8b-instant", groq_api_key=os.getenv("GROQ_API_KEY"))
+                    response = groq_llm.invoke([sys_msg, human_msg])
+                    final_proposal = response.content.strip()
+                except Exception as ex:
+                    error_msg = f"[API EXCEPTION in Reflection Agent]: {str(ex)}"
+                    print(error_msg)
+                    final_proposal = f"{draft}\n\n{error_msg}"
+            else:
+                error_msg = f"[API EXCEPTION in Reflection Agent]: {str(e)}"
+                print(error_msg)
+                final_proposal = f"{draft}\n\n{error_msg}"
     else:
-        print("[Reflection Agent] OPENROUTER_API_KEY not active. Producing final proposal.")
-        final_proposal = generate_fallback_reflection(draft)
+        error_msg = "[LLM API UNSET/MISSING]: Neither OPENROUTER_API_KEY nor GROQ_API_KEY are configured in .env."
+        print(error_msg)
+        final_proposal = f"{draft}\n\n{error_msg}"
 
-    updated_messages = list(messages) + [
-        {"sender": "Reflection Agent (Claude 3.5 Sonnet)", "content": final_proposal}
-    ]
-
-    print(f"Final Proposal:\n{final_proposal}")
-    return {
-        "final_proposal": final_proposal,
-        "messages": updated_messages,
-    }
+    updated_messages = list(messages) + [{"sender": "Reflection", "content": final_proposal}]
+    return {"final_proposal": final_proposal, "messages": updated_messages}
 
 
-# ---------------------------------------------------------------------------
-# 6. Fallback Generators
-# ---------------------------------------------------------------------------
-
-def generate_fallback_intent(inquiry: str) -> str:
-    return (
-        "Shoot Type: Outdoor Golden Hour Portrait\n"
-        "Location: Malibu Beach\n"
-        "Date/Time: August 15th @ 6:00 PM\n"
-        "Requirements: High-speed sync fill light, softbox modifier, quick high-res delivery."
-    )
-
-
-def generate_fallback_draft(intent: str) -> str:
-    return (
-        "### PHOTOGRAPHY SHOOT PROPOSAL & QUOTE\n"
-        "**Client Intent**: Golden Hour Sunset Portrait Session\n"
-        "**Location**: Malibu Beach | **Date**: August 15th @ 6:00 PM\n"
-        "**Schedule**: 5:30 PM Setup -> 6:00 PM - 7:30 PM Shoot -> 8:00 PM Wrap\n"
-        "**Equipment**: Sony A7IV mirrorless, 85mm f/1.4 prime lens, Godox AD200Pro strobe.\n"
-        "**Pricing**: $450 total (includes 2-hour shoot & 10 retouched high-res deliverables)."
-    )
-
-
-def generate_fallback_reflection(draft: str) -> str:
-    return (
-        f"{draft}\n\n"
-        "### QUALITY & SAFETY REFLECTION AUDIT\n"
-        "[OK] Lighting Modifiers: Included 36\" collapsible softbox with grid for soft facial fill against sunset.\n"
-        "[OK] Wind & Safety: Added 15lb C-stand sandbags for beach stabilization.\n"
-        "[OK] Sync & Triggering: High-Speed Sync (HSS) transmitter enabled for outdoor f/1.4 aperture.\n\n"
-        "FINAL STATUS: Approved and ready for client delivery."
-    )
-
-
-# ---------------------------------------------------------------------------
-# 7. LangGraph Graph Construction (3-Node Architecture)
-# ---------------------------------------------------------------------------
-
+# 6. LangGraph Graph Construction
 def build_agent_graph():
-    """
-    Constructs and compiles the 3-node sequential LangGraph state machine:
-    Router (Groq) -> Orchestrator (OpenRouter) -> Reflection (OpenRouter) -> END
-    """
     builder = StateGraph(AgentState)
-
-    # Add 3 Core Nodes
     builder.add_node("router", router_node)
     builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("reflection", reflection_node)
-
-    # Wire Edges Sequentially
+    
     builder.add_edge(START, "router")
     builder.add_edge("router", "orchestrator")
     builder.add_edge("orchestrator", "reflection")
     builder.add_edge("reflection", END)
-
-    # Compile Graph
+    
     return builder.compile()
 
-
-# Compile graph application
 app = build_agent_graph()
-
-
-# ---------------------------------------------------------------------------
-# 8. Test Execution Harness
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    print("==================================================================")
-    print(" CreativeSync 3-Node Multi-Agent State Machine Test Execution")
-    print("==================================================================")
-
-    sample_inquiry = (
-        "Hi CreativeSync! I'm looking to book a 2-hour outdoor sunset portrait shoot at "
-        "Malibu Beach on August 15th around 6:00 PM. I need dramatic golden hour lighting with fill light, "
-        "professional gear, and fast turnaround on retouched photos."
-    )
-
-    initial_state: AgentState = {
-        "client_inquiry": sample_inquiry,
-        "parsed_intent": "",
-        "proposal_draft": "",
-        "final_proposal": "",
-        "messages": [],
-    }
-
-    final_state = app.invoke(initial_state)
-
-    print("\n==================================================================")
-    print(" WORKFLOW EXECUTION COMPLETE")
-    print("==================================================================")
-    print("\n--- STRUCTURED MESSAGE EXCHANGE ---")
-    for idx, msg in enumerate(final_state.get("messages", []), 1):
-        print(f"\n[{idx}] {msg['sender']}:")
-        print(msg['content'])
-
-    print("\n==================================================================")
-    print("--- FINAL PROPOSAL DELIVERABLE ---")
-    print(final_state.get("final_proposal", "No final proposal generated."))

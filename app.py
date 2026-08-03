@@ -208,18 +208,17 @@ with st.form(key="shoot_booking_form"):
 
     special_requirements = st.text_area(
         "Special Requirements & Deliverable Specs",
-        value="Need lighting setup for indoor portraits, and a fast turnaround of edited photos.",
         height=100,
-        placeholder="Detail lighting preferences, shot list items, or urgent turnaround needs...",
+        placeholder="Detail lighting preferences, drone needs, shot list items, or urgent turnaround requirements...",
     )
 
     st.markdown("##### 👤 Client Contact Information")
     col_contact1, col_contact2 = st.columns(2)
     with col_contact1:
-        client_name = st.text_input("Full Name", value="Kasun Perera", placeholder="e.g. Kasun Perera")
-        client_email = st.text_input("Email Address", value="kasun@example.com", placeholder="e.g. kasun@example.com")
+        client_name = st.text_input("Full Name", placeholder="e.g., Kasun Perera")
+        client_email = st.text_input("Email Address", placeholder="kasun@example.com")
     with col_contact2:
-        client_phone = st.text_input("Contact / WhatsApp Number", value="+94 77 123 4567", placeholder="e.g. +94 77 123 4567")
+        client_phone = st.text_input("Contact / WhatsApp Number", placeholder="+94 77 123 4567")
 
     submit_button = st.form_submit_button(label="🚀 Compile & Book Shoot Proposal")
 

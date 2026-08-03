@@ -1,0 +1,135 @@
+{
+  "Colombo": [
+    {
+      "name": "Viharamahadevi Park",
+      "type": "Public Park",
+      "fee": "Free for general, LKR 2,000 for commercial/wedding shoots",
+      "best_time": "06:30 AM - 08:30 AM or 04:30 PM - 06:00 PM",
+      "notes": "Prior permission required for large setups and lighting gear."
+    },
+    {
+      "name": "Independence Square",
+      "type": "Monument / Public Space",
+      "fee": "Free",
+      "best_time": "06:00 AM - 07:30 AM",
+      "notes": "No drones allowed. Great for architectural backgrounds and elegant portraits."
+    },
+    {
+      "name": "Galle Face Green",
+      "type": "Urban Beach / Public Space",
+      "fee": "Free",
+      "best_time": "05:00 PM - 06:30 PM",
+      "notes": "Perfect for dramatic sunset silhouettes. Gets heavily crowded on weekends."
+    },
+    {
+      "name": "Port City Colombo",
+      "type": "Modern Urban / Beach",
+      "fee": "Free for casual, commercial permit required for large crews",
+      "best_time": "04:30 PM - 06:30 PM",
+      "notes": "Strict security checks. Drones require special prior approval."
+    },
+    {
+      "name": "Seema Malakaya & Beira Lake",
+      "type": "Temple / Lakeside",
+      "fee": "Entrance fee around LKR 300-500",
+      "best_time": "06:30 AM - 08:00 AM",
+      "notes": "Beautiful morning light with an urban temple aesthetic. Needs to be respectful of the religious site."
+    }
+  ],
+  "Malabe": [
+    {
+      "name": "Water's Edge Boardwalk",
+      "type": "Lakeside / Nature",
+      "fee": "LKR 5,000 Permit Fee",
+      "best_time": "05:00 PM - 06:30 PM",
+      "notes": "Perfect for sunset golden hour. Needs advance booking and confirmation."
+    },
+    {
+      "name": "Ape Gama",
+      "type": "Cultural Village",
+      "fee": "LKR 3,000 Permit Fee",
+      "best_time": "08:00 AM - 10:00 AM or 03:00 PM - 05:00 PM",
+      "notes": "Ideal for traditional, rustic, or vintage themed pre-shoots."
+    }
+  ],
+  "Kaduwela": [
+    {
+      "name": "Diyatha Uyana",
+      "type": "Park / Lakeside",
+      "fee": "Free",
+      "best_time": "06:30 AM - 08:30 AM",
+      "notes": "Gets crowded in the evening. Morning shoots are highly recommended for clear backgrounds."
+    },
+    {
+      "name": "Beddagana Wetland Park",
+      "type": "Nature Reserve",
+      "fee": "LKR 100/200 Entrance Fee",
+      "best_time": "06:30 AM - 09:00 AM",
+      "notes": "Wooden pathways and natural greenery. Drones are strictly prohibited due to birdlife."
+    }
+  ],
+  "Matara": [
+    {
+      "name": "Pigeon Island Bridge",
+      "type": "Beach / Architectural",
+      "fee": "Free",
+      "best_time": "05:30 PM - 06:30 PM",
+      "notes": "Windy location, great for dramatic sunset fill light."
+    },
+    {
+      "name": "Polhena Beach",
+      "type": "Beach / Coastal",
+      "fee": "Free",
+      "best_time": "06:00 AM - 08:00 AM or 05:00 PM - 06:30 PM",
+      "notes": "Clear shallow waters. Morning is best to avoid the local crowds."
+    }
+  ],
+  "Galle": [
+    {
+      "name": "Galle Dutch Fort",
+      "type": "Historical / Architectural",
+      "fee": "Free for public areas",
+      "best_time": "04:00 PM - 06:30 PM",
+      "notes": "Iconic colonial architecture and ramparts. Drone flying requires strict civil aviation and police clearance."
+    },
+    {
+      "name": "Unawatuna Beach",
+      "type": "Beach / Coastal",
+      "fee": "Free",
+      "best_time": "06:00 AM - 08:00 AM",
+      "notes": "Best in the early morning for uninterrupted shots. Famous for the palm tree swings (swing owners may charge a small fee)."
+    }
+  ],
+  "Kandy": [
+    {
+      "name": "Royal Botanical Gardens, Peradeniya",
+      "type": "Botanical Garden / Nature",
+      "fee": "LKR 2,000 for wedding/commercial shoots",
+      "best_time": "08:00 AM - 10:30 AM or 03:00 PM - 05:00 PM",
+      "notes": "Huge variety of backdrops including the palm avenue. Advance booking recommended for full crews."
+    },
+    {
+      "name": "Kandy Lake Round",
+      "type": "Lakeside / Scenic",
+      "fee": "Free",
+      "best_time": "06:30 AM - 08:00 AM",
+      "notes": "Beautiful backdrop of the Temple of the Tooth. Traffic gets heavy later in the day."
+    }
+  ],
+  "Nuwara Eliya": [
+    {
+      "name": "Lake Gregory",
+      "type": "Lakeside / Scenic",
+      "fee": "LKR 200 Entrance + Camera Fee",
+      "best_time": "07:00 AM - 09:30 AM",
+      "notes": "Misty mornings provide a cinematic, cool vibe. Can be crowded during public holidays."
+    },
+    {
+      "name": "Hakgala Botanical Garden",
+      "type": "Botanical Garden / Mountain",
+      "fee": "LKR 1,500 - 2,000 for shoots",
+      "best_time": "08:30 AM - 11:00 AM",
+      "notes": "Beautiful rose garden and temperate plants. Weather can be unpredictable, bring rain protection for gear."
+    }
+  ]
+}

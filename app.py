@@ -248,6 +248,7 @@ if submit_button:
     initial_state: AgentState = {
         "client_inquiry": combined_inquiry,
         "parsed_intent": "",
+        "location_logistics": "",
         "proposal_draft": "",
         "final_proposal": "",
         "messages": [],
